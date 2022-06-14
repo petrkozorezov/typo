@@ -1,0 +1,8 @@
+{"1.2.0",
+[{<<"astranaut">>,{pkg,<<"astranaut">>,<<"0.10.1">>},0}]}.
+[
+{pkg_hash,[
+ {<<"astranaut">>, <<"766B70C82B6C68BDA62B3878642B2CE248EFF05187240A32105E41C68FD1390E">>}]},
+{pkg_hash_ext,[
+ {<<"astranaut">>, <<"515472F5666AF5EAB72C6A7FD914CE4BCBD7F8020A74916F616729008393FCFF">>}]}
+].
