@@ -35,9 +35,22 @@ number_union(a) -> '42'.
 any() -> any().
 any() -> '42'.
 
+-spec
+list() -> list().
+list() -> [42|42].
+
+-spec
+nil() -> [].
+nil() -> [].
+
+% TODO
+-spec
+tuple() -> {integer(), atom()}.
+tuple() -> {42, atom}.
+
 % -spec
 % id(V) -> V.
-% id(V) -> V.
+id(V) -> V.
 
 % -spec
 % maybe(undefined) -> undefined;

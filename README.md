@@ -24,7 +24,7 @@ tree(T) ->
   t:union([{leaf, T}, tree(T)]).
 ```
 
-Will transform to code for Typo cheker:
+Will transform to code for Typo checker:
 ```erlang
 tree__type(Arg) ->
   t:'case'({tuple, [Arg]},
