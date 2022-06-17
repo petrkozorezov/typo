@@ -1,92 +1,7 @@
-%%%
-%%% TODO
-%%%  - разделить на 2 pt
-%%%  - github
-%%%  - фреймворк для тестовых кейсов с 'should fail' и 'should pass'
-%%%  - добавить макрос 'as' в pt
-%%%  - сделать pt для type (???)
-%%%  - сделать мапы
-%%%  - логические функции(?) на мапами ('&', '|')
-%%%  - unknown type
-%%%  - проверка полноты покрытия в case
-%%%  -
-%%%  - заменить return на next
-%%%
-%%% Вопросы:
-%%%  - открытые спеки (вроде id)
-%%%  - гарды
-%%%  - для чека нужно компилировать otp с pp, как это организовать?
-%%%    просто собирать весь otp с типами? было бы удобно как в ts просто подключать библиотекой модули с типовыми функциями
-%%%  -
-%%%
-%%% Релизы:
-%%%  - preAlpha
-%%%   - что-то работает можно делиться с друзьями
-%%%  - Alpha
-%%%   - работает прилично, можно делиться с более широким кругом знакомых
-%%%   - нормальные ошибки
-%%%   - прочекать самого себя (и зависимости?)
-%%%  - Beta
-%%%   - работает без известных проблем, можно делиться сообществом
-%%%   - проверено на больших проектах
-%%%  - Release
-%%%
-%%% Продвижение:
-%%%  - Alpha:
-%%%   - сделать много примеров постепенно раскрывающих возможности
-%%%   - сделать доку
-%%%   - написать в чатик посмотреть на обратную связь
-%%%  - Beta:
-%%%   - попробовать прочекать известные проекты и при наличии ошибок завести issue со ссылкой на отчёт
-%%%   - написать в большой чатик
-%%%
-
-% #typo #erlang #typechecker
-% - тип это функтор
-% - у тайпчекинга есть 2 фазы:
-%  - сначала с парстрансформами (pt) компиляция кода
-%  - запуск (run) скомпилированного кода для проверки типов
-% - на стадии pt происходит компиляция типов и спеков в функции которые на вход получают типы и на выход дают результирующий тип
-
-% - pt для:
-%  - тела функции
-%  - type/spec
-% - extend на эрланг
-% - extend на rust
-% - кеширование?
-% - параллелизм
-
-% t - обозначение типа
-% match - проверка на подтип
-% as - каст в другой тип
-% any, term,..., no_return встроенные типы
-% union - тип сумма
-
 -module(t).
 -include_lib("typo/include/t.hrl").
 -export([match/4, as/2, 'case'/4, normalize/3]).
 
-% Type :: any()                 %% The top type, the set of all Erlang terms
-%       | none()                %% The bottom type, contains no terms
-%       | Atom
-%       | Bitstring
-%       | flaot()
-%       | Fun
-%       | Integer
-%       | List
-%       | Map
-%       | Tuple
-%       | Union
-%       | UserDefined           %% described in Type Declarations of User-Defined Types
-
-% {1, 2    } :: {1, 2} <= {1, any()}
-% {1, any()} :: {1, any()}
-
-% [1, 2, any()] :: [any()]
-
-%% TODO подумать про
-%%  - тип term как супер типа для литералов
-%%  - term как unknown (плохая идея, будет людей сбивать с толку, unknown нужен явный)
 -type t() ::
     any
   | none % 'never' in ts
@@ -119,15 +34,10 @@
 -type bindings() :: #{ var_name() => t() }.
 -type var_name() :: atom().
 -type error() :: reason().
-% TODO add anno
 % -type error() :: {erl_anno:anno(), reason()}.
 -type reason() :: any(). % TODO specify
 
 
-%
-% TODO:
-%  - map
-%
 -type match_result() :: {ok | error, context()}.
 -spec match(options(), context(), t(), t()) ->
   match_result().
@@ -165,7 +75,6 @@ match(Opts, Ctx, tuple, {tuple, Types}) ->
 match(Opts, Ctx, {tuple, TypesA}, {tuple, TypesB}) when length(TypesA) =:= length(TypesB) ->
   match_all(Opts, Ctx, lists:zip(TypesA, TypesB));
 
-% mb fold union before?
 match(Opts, Ctx, Type, {union, UnionTypes}) ->
   union_match_all(Opts, Ctx, [{Type, UnionType} || UnionType <- UnionTypes], []);
 match(Opts, Ctx, {union, UnionTypes}, Type) ->
@@ -177,13 +86,11 @@ match(Opts, Ctx, {union, UnionTypes}, Type) ->
 %%        foo(1 | 2    ) -> 1 | 2.
 %% contr: foo(1        ) -> 1 | 2 | 3.
 %% co:    foo(1 | 2 | 3) -> 1.
-%% TODO check this code
 match(Opts, Ctx, {'fun', ArgsA, RetA}, {'fun', ArgsB, RetB}) ->
   case match(reverse(Opts), Ctx, {tuple, ArgsB}, {tuple, ArgsA}) of
     {ok, NewCtx}     -> match(Opts, NewCtx, RetA, RetB);
     Error={error, _} -> Error
   end;
-  % match_all(Opts, Ctx, [{{tuple, ArgsB}, {tuple, ArgsA}}, {RetA, RetB}]);
 
 % mb use word 'MetaType' instead of 'F'
 match(Opts, Ctx, F, Type) when is_function(F, 0) ->
@@ -350,18 +257,18 @@ as(_From, _To) ->
   {t(), context()}.
 'case'(Opts, Ctx, ValueType, Cases) ->
   Bindings = Ctx#context.bindings,
-  {UnionTypes = NewCtx} =
+  {UnionTypes, NewCtx} =
     lists:foldl(
       fun({ClauseType, Fun}, {UnionTypesAcc, CtxsAcc}) ->
         case match(Opts, CtxsAcc#context{bindings = Bindings}, ClauseType, ValueType) of
           {ok, NewCtx} ->
-            {UnionType, NewCtxAcc} = Fun(NewCtx),
+            {UnionType, NewCtxAcc} = Fun(NewCtx#context{errors = CtxsAcc#context.errors}),
             {[UnionType|UnionTypesAcc], NewCtxAcc};
           {error, NewCtxAcc} ->
-            {UnionTypesAcc, NewCtxAcc}
+            {UnionTypesAcc, NewCtxAcc#context{errors = CtxsAcc#context.errors}}
         end
       end,
-      Ctx,
+      {[], Ctx},
       Cases
     ),
   {
@@ -396,67 +303,3 @@ normalize(_, _, Type) ->
 
 reverse(Opts = #options{reverse_flag = Reverse}) ->
   Opts#options{reverse_flag = not Reverse}.
-
-% номализация блока
-% цепочка матчей
-
-% id__impl(__Arg1) ->
-%   t:'case'({tuple, [__Arg1]}, [
-%     {{tuple, [{var, 'V'}]}, fun(Ctx) ->
-%       Ctx1 = t:match({tuple, [{var, 'K'}]}, {tuple, [{atom, atom}]}),
-%       t:normalize({var, 'K'}, Ctx1)
-%     end}
-%   ], #{}).
-
-% id__impl(__Arg1) ->
-%   Ctx = t:match({tuple, [{var, 'V'}]}, {tuple, [__Arg1]}),
-%   t:normalize({var, 'V'}, Ctx).
-
-
-% traverse(Fun, Type, Ctx) ->
-
-
-% %% 2 уровня pt
-% %%  - генерация spec type_func для всех функций и их спеков
-% %%  - преобразование всех type_func:
-% %%   - проверка на чистоту
-% %%   - замена match и case на match с bindings
-% -types([test_type/1]).
-
-% -spec type__test_type(type()) ->
-%   type().
-% type__test_type(In) ->
-%   A = fun t:integer/0,
-%   B = {fun integer/1, 1},
-%   case In of
-%     atom -> {atom, test};
-%     {tuple, [test]} -> {atom, test};
-%   end.
-
-% %% идеальный вид типовых функций
-% %% вызовы других типовых функций конвертируются в тип t()
-% %% (как понять вызываемая функия типовая или нет?)
-%   C = {tuple, [integer]}
-%   {tuple, [A]} = C,
-% match => A = integer
-%   % B = integer(1),
-%   case In of
-%     atom() -> atom(test);
-%     tuple(test, C) -> tuple(A, C);
-%   end.
-
-
-
-% % required < optional
-% % false < true
-% #{
-%   any     := integer,
-%   integer := any,
-% }
-% #{
-%   any     => integer,
-%   integer => any,
-% }
-% map_match([{TypeA, OptA}|TailA], [{TypeB, OptB}|TailB]) ->
-%   match(TypeA, TypeB) andalso OptA =< OptB andalso
-% map_match(A, B) ->

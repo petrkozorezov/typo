@@ -227,6 +227,41 @@ match_functions_error_test() ->
     )
   ).
 
+%%
+%% case
+%%
+case_empty_test() ->
+  ?assertEqual(
+    {none, ctx()},
+    t:'case'(opts(), ctx(), {atom, a1}, [
+      {{atom, a2}, fun(Ctx) -> {{atom, integer}, Ctx} end}
+    ])
+  ).
+case_without_choise_test() ->
+  ?assertEqual(
+    {{atom, ok}, ctx()},
+    t:'case'(opts(), ctx(), {atom, a1}, [
+      {{atom, a1}, fun(Ctx) -> {{atom, ok}, Ctx} end}
+    ])
+  ).
+case_with_choise_test() ->
+  ?assertEqual(
+    {{atom, ok}, ctx()},
+    t:'case'(opts(), ctx(), {atom, a1}, [
+      {{atom, a1}, fun(Ctx) -> {{atom, ok   }, Ctx} end},
+      {{atom, a2}, fun(Ctx) -> {{atom, error}, Ctx} end}
+    ])
+  ).
+case_var_test() ->
+  ?assertEqual(
+    {{atom, a1}, ctx()},
+    t:'case'(opts(), ctx(), {atom, a1}, [
+      {{var, 'A'}, fun(Ctx) -> {maps:get('A', Ctx#context.bindings), Ctx} end}
+    ])
+  ).
+
+%%
+
 ok() ->
   ok(#{}).
 ok(Bindings) ->
