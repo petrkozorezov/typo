@@ -1,15 +1,7 @@
 -module(t_test).
--include_lib("typo/include/t.hrl").
-
--include_lib("proper/include/proper.hrl").
-
--include_lib("eunit/include/eunit.hrl").
--include_lib("stdlib/include/assert.hrl").
-
-% -define(debug(Fmt, Args), ok).
--define(debug(Fmt, Args), ?debugFmt(Fmt, Args)).
-
 -compile({no_auto_import, [error/1, error/2]}).
+-include("common.hrl").
+
 
 %%
 %% simple vars
@@ -17,44 +9,51 @@
 match_unknownVar_atom_test() ->
   ?assertEqual(
     ok(#{'A' => atom}),
-    t:match(opts(), ctx(), {var, 'A'}, atom)
+    t:match(ctx(), {var, 'A'}, atom)
   ).
 match_atom_unknownVar_test() ->
   ?assertEqual(
-    error({'unknown var', 'A'}),
-    t:match(opts(), ctx(), atom, {var, 'A'})
+    error([{atom, {var, 'A'}}]),
+    t:match(ctx(), atom, {var, 'A'})
   ).
 match_unknownVar_knownVar_test() ->
   ?assertEqual(
     ok(#{'B' => {var, 'A'}, 'A' => atom }),
-    t:match(opts(), ctx(#{'A' => atom}), {var, 'B'}, {var, 'A'})
+    t:match(ctx(#{'A' => atom}), {var, 'B'}, {var, 'A'})
   ).
 match_knownVar_unknownVar_test() ->
   Bindings = #{'A' => atom},
   ?assertEqual(
-    error({'unknown var', 'B'}, Bindings),
-    t:match(opts(), ctx(Bindings), {var, 'A'}, {var, 'B'})
+    error([
+      {{var, 'A'}, {var, 'B'}},
+      { atom     , {var, 'B'}}
+    ], Bindings),
+    t:match(ctx(Bindings), {var, 'A'}, {var, 'B'})
   ).
 match_knownVar_knownVar_ok_test() ->
   ?assertEqual(
     ok(#{'A' => atom}),
-    t:match(opts(), ctx(#{'A' => atom}), {var, 'A'}, {var, 'A'})
+    t:match(ctx(#{'A' => atom}), {var, 'A'}, {var, 'A'})
   ).
 match_knownVar_knownVar_error_test() ->
   Bindings = #{'A' => atom, 'B' => integer},
   ?assertEqual(
-    error({badmatch, atom, integer}, Bindings),
-    t:match(opts(), ctx(Bindings), {var, 'A'}, {var, 'B'})
+    error([
+      {{var, 'A'}, {var, 'B'}},
+      { atom     , {var, 'B'}},
+      { atom     ,  integer  }
+    ], Bindings),
+    t:match(ctx(Bindings), {var, 'A'}, {var, 'B'})
   ).
 match_unknownVar_unknownVar_test() ->
   ?assertEqual(
     ok(#{'A' => {var, 'B'}}),
-    t:match(opts(), ctx(), {var, 'A'}, {var, 'B'})
+    t:match(ctx(), {var, 'A'}, {var, 'B'})
   ).
 match_same_unknownVar_unknownVar_test() ->
   ?assertEqual(
     ok(#{'A' => {var, 'A'}}),
-    t:match(opts(), ctx(), {var, 'A'}, {var, 'A'})
+    t:match(ctx(), {var, 'A'}, {var, 'A'})
   ).
 
 %%
@@ -63,17 +62,17 @@ match_same_unknownVar_unknownVar_test() ->
 match_atom_any_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), atom, any)
+    t:match(ctx(), atom, any)
   ).
 match_unknownVar_any_test() ->
   ?assertEqual(
     ok(#{'A' => any}),
-    t:match(opts(), ctx(), {var, 'A'}, any)
+    t:match(ctx(), {var, 'A'}, any)
   ).
 match_listUnknownVar_any_test() ->
   ?assertEqual(
     ok(#{'A' => any}),
-    t:match(opts(), ctx(), {list, {var, 'A'}}, any)
+    t:match(ctx(), {list, {var, 'A'}}, any)
   ).
 
 %%
@@ -82,17 +81,17 @@ match_listUnknownVar_any_test() ->
 match_atom_none_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), atom, none)
+    t:match(ctx(), atom, none)
   ).
 match_unknownVar_none_test() ->
   ?assertEqual(
     ok(#{'A' => none}),
-    t:match(opts(), ctx(), {var, 'A'}, none)
+    t:match(ctx(), {var, 'A'}, none)
   ).
 match_listUnknownVar_none_test() ->
   ?assertEqual(
     ok(#{'A' => none}),
-    t:match(opts(), ctx(), {list, {var, 'A'}}, none)
+    t:match(ctx(), {list, {var, 'A'}}, none)
   ).
 
 %%
@@ -101,33 +100,33 @@ match_listUnknownVar_none_test() ->
 match_listUnknownVar_listAtom_test() ->
   ?assertEqual(
     ok(#{'A' => atom}),
-    t:match(opts(), ctx(), {list, {var, 'A'}}, {list, atom})
+    t:match(ctx(), {list, {var, 'A'}}, {list, atom})
   ).
 match_list_cons_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), {list, atom}, {cons, {atom, a1}, nil})
+    t:match(ctx(), {list, atom}, {cons, ?a1, nil})
   ).
 match_list_consCons_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), {list, atom}, {cons, {atom, a1}, {cons, {atom, a2}, nil}})
+    t:match(ctx(), {list, atom}, {cons, ?a1, {cons, ?a2, nil}})
   ).
 match_listUnknownVar_consCons_test() ->
   ?assertEqual(
-    ok(#{'A' => {union, [{atom, a1}, {atom, a2}]}}),
-    t:match(opts(), ctx(), {list, {var, 'A'}}, {cons, {atom, a1}, {cons, {atom, a2}, nil}})
+    ok(#{'A' => ?ua1a2}),
+    t:match(ctx(), {list, {var, 'A'}}, {cons, ?a1, {cons, ?a2, nil}})
   ).
 
 match_tupleVartuple_test() ->
   ?assertEqual(
-    ok(#{'A' => {atom, a2}}),
-    t:match(opts(), ctx(), {tuple, [{var, 'A'}, {atom, a1}]}, {tuple, [{atom, a2}, {atom, a1}]})
+    ok(#{'A' => ?a2}),
+    t:match(ctx(), {tuple, [{var, 'A'}, ?a1]}, {tuple, [?a2, ?a1]})
   ).
 match_tupleAny_tupleAtom_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), tuple, {tuple, [{atom, a1}]})
+    t:match(ctx(), tuple, {tuple, [?a1]})
   ).
 
 %%
@@ -136,49 +135,54 @@ match_tupleAny_tupleAtom_test() ->
 match_union_atom_ok_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), {union, [{atom, a1}, {atom, a2}]}, {atom, a1})
+    t:match(ctx(), ?ua1a2, ?a1)
   ).
 match_union_atom_error_test() ->
   ?assertEqual(
-    error({badmatch, {union, [{atom, a1}, {atom, a2}]}, {atom, a3}}),
-    t:match(opts(), ctx(), {union, [{atom, a1}, {atom, a2}]}, {atom, a3})
+    error([{?ua1a2, ?a3}, {?a1, ?a3}]),
+    t:match(ctx(), ?ua1a2, ?a3)
   ).
 match_unionVar_atom_ok_test() ->
   ?assertEqual(
     ok(#{'A' => atom}),
-    t:match(opts(), ctx(), {union, [{atom, a1}, {var, 'A'}]}, atom)
+    t:match(ctx(), {union, [?a1, {var, 'A'}]}, atom)
   ).
 match_atom_union_ok_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(), atom, {union, [{atom, a1}, {atom, a2}]})
+    t:match(ctx(), atom, ?ua1a2)
   ).
 match_atom_union_error_test() ->
+  Union = ?ua1a2,
   ?assertEqual(
-    error({badmatch, {atom, a1}, {atom, a2}}),
-    t:match(opts(), ctx(), {atom, a1}, {union, [{atom, a1}, {atom, a2}]})
+    error([{?a1, Union}, {?a1, ?a2}]),
+    t:match(ctx(), ?a1, Union)
   ).
 match_union_union_ok_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(),
+    t:match(ctx(),
       {union, [atom, integer]},
-      {union, [{atom, a1}, {atom, a2}]}
+      ?ua1a2
     )
   ).
 match_union_union_error_test() ->
+  Union = {union, [integer, float]},
   ?assertEqual(
-    error({badmatch, {union, [integer, float]}, {atom, a1}}),
-    t:match(opts(), ctx(),
+    error([
+      {Union  , ?ua1a2},
+      {Union  , ?a1   },
+      {integer, ?a1   }
+    ]),
+    t:match(ctx(),
       {union, [integer, float]},
-      {union, [{atom, a1}, {atom, a2}]}
+      ?ua1a2
     )
   ).
 match_unionVar_unionAtom_test() ->
-  ResultUnion = {union, [{atom, a1}, {atom, a2}]},
   ?assertEqual(
-    ok(#{'A' => ResultUnion, 'B' => ResultUnion}),
-    t:match(opts(), ctx(), {union, [{var, 'A'}, {var, 'B'}]}, {union, [{atom, a1}, {atom, a2}]})
+    ok(#{'A' => ?ua1a2, 'B' => ?ua1a2}),
+    t:match(ctx(), {union, [{var, 'A'}, {var, 'B'}]}, ?ua1a2)
   ).
 match_unionVar_complex_test() ->
   ?assertEqual(
@@ -187,7 +191,7 @@ match_unionVar_complex_test() ->
       'B' => atom,
       'C' => {var, 'D'}
     }),
-    t:match(opts(), ctx(#{'A' => integer}),
+    t:match(ctx(#{'A' => integer}),
       {union, [
         {tuple, [{var, 'A'}, {var, 'B'}, {var, 'C'}]},
         {tuple, [integer, atom, {var, 'D'}]},
@@ -201,63 +205,44 @@ match_unionVar_complex_test() ->
 match_functions_ok_test() ->
   ?assertEqual(
     ok(),
-    t:match(opts(), ctx(),
-      {'fun', [{atom, a1}, {atom, a1}],  atom     },
-      {'fun', [ atom     ,  atom     ], {atom, a1}}
+    t:match(ctx(),
+      {'fun', [atom, ?a2 ], atom},
+      {'fun', [atom, atom], ?a3 }
     )
   ).
 match_functions_var_test() ->
   ?assertEqual(
     ok(#{
-      'A1' => {atom, a1},
-      'A2' => {atom, a2},
-      'R'  => {atom, r }
+      'A1' => atom,
+      'A2' => ?a2,
+      'A3' => ?a3
     }),
-    t:match(opts(), ctx(),
-      {'fun', [{var, 'A1'}, {var, 'A2'}], {var, 'R'}},
-      {'fun', [{atom, a1 }, {atom, a2 }], {atom, r }}
-    )
-  ).
-match_functions_error_test() ->
-  ?assertEqual(
-    error({badmatch, {atom, a1}, atom}),
-    t:match(opts(), ctx(),
-      {'fun', [ atom     ,  atom     ], {atom, a1}},
-      {'fun', [{atom, a1}, {atom, a1}],  atom     }
+    t:match(ctx(),
+      {'fun', [{var, 'A1'}, {var, 'A2'}], {var, 'A3'}},
+      {'fun', [ atom      ,  ?a2       ],  ?a3       }
     )
   ).
 
-%%
-%% case
-%%
-case_empty_test() ->
+match_functions_error_1_test() ->
+  FA = {'fun', [atom, ?a2 ], ?a3 },
+  FB = {'fun', [atom, atom], atom},
   ?assertEqual(
-    {none, ctx()},
-    t:'case'(opts(), ctx(), {atom, a1}, [
-      {{atom, a2}, fun(Ctx) -> {{atom, integer}, Ctx} end}
-    ])
+    error([
+      {FA  , FB },
+      {?a3, atom}
+    ]),
+    t:match(ctx(), FA, FB)
   ).
-case_without_choise_test() ->
+
+match_functions_error_2_test() ->
+  FA = {'fun', [atom, atom], atom},
+  FB = {'fun', [atom, ?a2 ], ?a1 },
   ?assertEqual(
-    {{atom, ok}, ctx()},
-    t:'case'(opts(), ctx(), {atom, a1}, [
-      {{atom, a1}, fun(Ctx) -> {{atom, ok}, Ctx} end}
-    ])
-  ).
-case_with_choise_test() ->
-  ?assertEqual(
-    {{atom, ok}, ctx()},
-    t:'case'(opts(), ctx(), {atom, a1}, [
-      {{atom, a1}, fun(Ctx) -> {{atom, ok   }, Ctx} end},
-      {{atom, a2}, fun(Ctx) -> {{atom, error}, Ctx} end}
-    ])
-  ).
-case_var_test() ->
-  ?assertEqual(
-    {{atom, a1}, ctx()},
-    t:'case'(opts(), ctx(), {atom, a1}, [
-      {{var, 'A'}, fun(Ctx) -> {maps:get('A', Ctx#context.bindings), Ctx} end}
-    ])
+    error([
+      {FA  , FB },
+      {?a2, atom}
+    ]),
+    t:match(ctx(), FA, FB)
   ).
 
 %%
@@ -266,37 +251,16 @@ ok() ->
   ok(#{}).
 ok(Bindings) ->
   {ok, #context{
-    bindings = Bindings,
-    errors   = []
+    bindings = Bindings
   }}.
 
 error(Error) ->
   error(Error, #{}).
 
 error(Error, Bindings) ->
-  {error, #context{
-    bindings = Bindings,
-    errors   = [Error]
+  {{error, Error}, #context{
+    bindings = Bindings
   }}.
-
-ctx() ->
-  ctx(#{}).
-ctx(Bindings) ->
-  #context{
-    bindings = Bindings,
-    errors   = []
-  }.
-
-opts() ->
-  #options{}.
-
-% match_super(A, B)
-%   match(A, B);
-% match_sub(A, B)
-%   match(B, A).
-
-% match_super(Pat, Val)
-% match_sub(Pat, Val)
 
 %%
 %% simple model test
@@ -307,9 +271,9 @@ match_test() ->
       ?FORALL(B, t(),
         ?FORALL(A, t_sub(B), begin
           % ?debug("~p ~p", [A, B]),
-          case t:match(opts(), ctx(), B, A) of
-            {ok   , _} -> true;
-            {error, _} -> false
+          case t:match(ctx(), B, A) of
+            {ok, _} -> true;
+            _       -> false
           end
         end)
       ),

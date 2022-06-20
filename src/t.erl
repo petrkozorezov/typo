@@ -1,6 +1,7 @@
 -module(t).
 -include_lib("typo/include/t.hrl").
--export([match/4, as/2, 'case'/4, normalize/3]).
+-export([match/3, as/2, normalize/2, union/1]).
+-export_type([t/0, options/0, context/0, bindings/0, var_name/0, exception/0, exceptions/0, stacktrace/0, match_stack/0]).
 
 -type t() ::
     any
@@ -27,119 +28,123 @@
   % | binary
   | {var, var_name()}
 .
-
+-type ts() :: list(t()).
 
 -type options() :: #options{}.
 -type context() :: #context{}.
 -type bindings() :: #{ var_name() => t() }.
 -type var_name() :: atom().
--type error() :: reason().
-% -type error() :: {erl_anno:anno(), reason()}.
--type reason() :: any(). % TODO specify
+-type exception() :: {exit | error | throw, term(), stacktrace()}.
+-type exceptions() :: list(exception()).
+-type stacktrace() :: list(term()). % TODO refine
+-type match_stack() :: list({t(), t()}).
+% -type message() :: {erl_anno:anno(), reason()}.
 
-
--type match_result() :: {ok | error, context()}.
--spec match(options(), context(), t(), t()) ->
+-type match_result() :: {ok | {error, match_stack()}, context()}.
+-spec match(context(), t(), t()) ->
   match_result().
-match(Opts, Ctx, VarType = {var, _}, Type) ->
-  match_var(Opts, Ctx, VarType, Type);
-match(Opts, Ctx, Type, VarType = {var, _}) ->
-  match_var(Opts, Ctx, Type, VarType);
+match(Ctx0 = #context{bindings = Bindings, match_stack = MatchStack}, A, B) ->
+  {Result, Ctx1} = match_(Ctx0#context{match_stack = [{A, B}|MatchStack]}, A, B),
+  Ctx2 =
+    case Result of
+       ok        -> Ctx1;
+      {error, _} -> Ctx1#context{bindings = Bindings}
+    end,
+  {Result, Ctx2#context{match_stack = MatchStack}}.
 
-match(_, Ctx, Type, Type) ->
+match_(Ctx, VarType = {var, _}, Type) ->
+  match_var(Ctx, VarType, Type);
+match_(Ctx, Type, VarType = {var, _}) ->
+  match_var(Ctx, Type, VarType);
+
+match_(Ctx, Type, Type) ->
   {ok, Ctx};
 
-match(_, Ctx, any, _) ->
+match_(Ctx, any, _) ->
   {ok, Ctx};
-match(Opts, Ctx, Type, AnyOrNone) when AnyOrNone =:= any; AnyOrNone =:= none -> % Really???
+match_(Ctx, Type, AnyOrNone) when AnyOrNone =:= any; AnyOrNone =:= none -> % Really???
   case Type of
-    {list, Type_}      -> match(Opts, Ctx, Type_, AnyOrNone);
-    {cons, Head, Tail} -> match_all(Opts, Ctx, [{Head, AnyOrNone}, {Tail, AnyOrNone}]);
-    {tuple, Types}     -> match_all(Opts, Ctx, [{Type_, AnyOrNone} || Type_ <- Types]);
-    {union, Types}     -> match_all(Opts, Ctx, [{Type_, AnyOrNone} || Type_ <- Types]);
-    {'fun', Args, Ret} -> match_all(Opts, Ctx, [{{tuple, Args}, AnyOrNone}, {Ret, AnyOrNone}]);
+    {list, Type_}      -> match(Ctx, Type_, AnyOrNone);
+    {cons, Head, Tail} -> match_all(Ctx, [{Head, AnyOrNone}, {Tail, AnyOrNone}]);
+    {tuple, Types}     -> match_all(Ctx, [{Type_, AnyOrNone} || Type_ <- Types]);
+    {union, Types}     -> match_all(Ctx, [{Type_, AnyOrNone} || Type_ <- Types]);
+    {'fun', Args, Ret} -> match_all(Ctx, [{{tuple, Args}, AnyOrNone}, {Ret, AnyOrNone}]);
     _                  -> {ok, Ctx} % primitive types
   end;
 
-match(Opts, Ctx, {list, TypeA}, {list, TypeB}) ->
-  match(Opts, Ctx, TypeA, TypeB);
-match(Opts, Ctx, {list, Type}, {cons, Head, Tail}) ->
-  union_match_all(Opts, Ctx, [{Type, Head}, {{list, Type}, Tail}], []);
-match(Opts, Ctx, {cons, HeadA, TailA}, {cons, HeadB, TailB}) ->
-  match_all(Opts, Ctx, [{HeadA, HeadB}, {TailA, TailB}]);
-match(_, Ctx, {list, _}, nil) ->
+match_(Ctx, {list, TypeA}, {list, TypeB}) ->
+  match(Ctx, TypeA, TypeB);
+match_(Ctx, {list, Type}, {cons, Head, Tail}) ->
+  union_match_all(Ctx, [{Type, Head}, {{list, Type}, Tail}], []);
+match_(Ctx, {cons, HeadA, TailA}, {cons, HeadB, TailB}) ->
+  match_all(Ctx, [{HeadA, HeadB}, {TailA, TailB}]);
+match_(Ctx, {list, _}, nil) ->
   {ok, Ctx};
 
-match(Opts, Ctx, tuple, {tuple, Types}) ->
-  match(Opts, Ctx, {tuple, Types}, any);
-match(Opts, Ctx, {tuple, TypesA}, {tuple, TypesB}) when length(TypesA) =:= length(TypesB) ->
-  match_all(Opts, Ctx, lists:zip(TypesA, TypesB));
+match_(Ctx, tuple, {tuple, Types}) ->
+  match(Ctx, {tuple, Types}, any);
+match_(Ctx, {tuple, TypesA}, {tuple, TypesB}) when length(TypesA) =:= length(TypesB) ->
+  match_all(Ctx, lists:zip(TypesA, TypesB));
 
-match(Opts, Ctx, Type, {union, UnionTypes}) ->
-  union_match_all(Opts, Ctx, [{Type, UnionType} || UnionType <- UnionTypes], []);
-match(Opts, Ctx, {union, UnionTypes}, Type) ->
-  case union_match_any(Opts, Ctx, [{UnionType, Type} || UnionType <- UnionTypes], []) of
-    OK = {ok, _}    -> OK;
-    {error, NewCtx} -> error_result({badmatch, {union, UnionTypes}, Type}, NewCtx)
-  end;
+match_(Ctx, Type, {union, UnionTypes}) ->
+  union_match_all(Ctx, [{Type, UnionType} || UnionType <- UnionTypes], []);
+match_(Ctx, {union, UnionTypes = [_|_]}, Type) ->
+  union_match_any(Ctx, [{UnionType, Type} || UnionType <- UnionTypes]);
 
 %%        foo(1 | 2    ) -> 1 | 2.
 %% contr: foo(1        ) -> 1 | 2 | 3.
 %% co:    foo(1 | 2 | 3) -> 1.
-match(Opts, Ctx, {'fun', ArgsA, RetA}, {'fun', ArgsB, RetB}) ->
-  case match(reverse(Opts), Ctx, {tuple, ArgsB}, {tuple, ArgsA}) of
-    {ok, NewCtx}     -> match(Opts, NewCtx, RetA, RetB);
-    Error={error, _} -> Error
+match_(Ctx0, {'fun', ArgsA, RetA}, {'fun', ArgsB, RetB}) ->
+  {Status, Ctx1} = match_all(reverse(Ctx0), lists:zip(ArgsB, ArgsA)),
+  Ctx2 = reverse(Ctx1),
+  % TODO error details with revert is hard to understand
+  case Status of
+    ok                 -> match(Ctx2, RetA, RetB);
+    Error = {error, _} -> {Error, Ctx2}
   end;
 
 % mb use word 'MetaType' instead of 'F'
-match(Opts, Ctx, F, Type) when is_function(F, 0) ->
-  match(Opts, Ctx, F(), Type);
-match(Opts, Ctx, Type, F) when is_function(F, 0) ->
-  match(Opts, Ctx, Type, F());
+match_(Ctx, F, Type) when is_function(F, 0) ->
+  match(Ctx, F(), Type);
+match_(Ctx, Type, F) when is_function(F, 0) ->
+  match(Ctx, Type, F());
 
-match(_, Ctx, atom, {atom, _}) ->
+match_(Ctx, atom, {atom, _}) ->
   {ok, Ctx};
-match(_, Ctx, integer, {integer, _}) ->
+match_(Ctx, integer, {integer, _}) ->
   {ok, Ctx};
-match(_, Ctx, float, {float, _}) ->
+match_(Ctx, float, {float, _}) ->
   {ok, Ctx};
 
-match(_, Ctx, TypeA, TypeB) ->
-  error_result({badmatch, TypeA, TypeB}, Ctx).
+match_(Ctx, _, _) ->
+  {{error, lists:reverse(Ctx#context.match_stack)}, Ctx}.
 
 
--spec error_result(error(), context()) ->
-  {error, context()}.
-error_result(Error, Ctx) ->
-  NewCtx =
-    Ctx#context{
-      errors = [Error | Ctx#context.errors]
-    },
-  {error, NewCtx}.
-
--spec match_var(options(), context(), t(), t()) ->
+-spec match_var(context(), t(), t()) ->
   match_result().
-match_var(Opts = #options{reverse_flag = Flag}, Ctx, TypeA, TypeB) ->
+match_var(Ctx, TypeA, TypeB) ->
+  #options{reverse_flag = Flag} = Ctx#context.options,
   case {Flag, TypeA, TypeB} of
-    {false, {var, Var}, Type} -> match_var_bind_or_match(Opts, Ctx, Type, Var);
-    {true , Type, {var, Var}} -> match_var_bind_or_match(Opts, Ctx, Type, Var);
-    {false, Type, {var, Var}} -> match_var_resolve      (Opts, Ctx, Type, Var);
-    {true , {var, Var}, Type} -> match_var_resolve      (Opts, Ctx, Type, Var)
+    {false, {var, Var}, Type} -> match_var_bind_or_match(Ctx, Type, Var);
+    {true , Type, {var, Var}} -> match_var_bind_or_match(Ctx, Type, Var);
+    {false, Type, {var, Var}} -> match_var_resolve      (Ctx, Type, Var);
+    {true , {var, Var}, Type} -> match_var_resolve      (Ctx, Type, Var)
   end.
 
--spec match_var_bind_or_match(options(), context(), t(), var_name()) ->
+-spec match_var_bind_or_match(context(), t(), var_name()) ->
   match_result().
-match_var_bind_or_match(Opts, Ctx = #context{bindings = Bindings}, Type, Var) ->
+match_var_bind_or_match(Ctx = #context{bindings = Bindings}, Type, Var) ->
   case maps:find(Var, Bindings) of
-    {ok, VarValue} -> match(Opts, Ctx, VarValue, Type);
+    {ok, VarValue} -> match(Ctx, VarValue, Type);
     error          -> {ok, Ctx#context{bindings = bind_var(Bindings, Var, Type)}}
   end.
 
-match_var_resolve(Opts, Ctx, Type, Var) ->
+-spec match_var_resolve(context(), t(), var_name()) ->
+  match_result().
+match_var_resolve(Ctx, Type, Var) ->
   case maps:find(Var, Ctx#context.bindings) of
-    {ok, VarValue} -> match(Opts, Ctx, Type, VarValue);
-    error          -> error_result({'unknown var', Var}, Ctx)
+    {ok, VarValue} -> match(Ctx, Type, VarValue);
+     error         -> {{error, lists:reverse(Ctx#context.match_stack)}, Ctx}
   end.
 
 -spec bind_var(bindings(), var_name(), t()) ->
@@ -150,38 +155,45 @@ bind_var(Bindings, Var, Type) ->
   false = maps:is_key(Var, Bindings), % assert
   maps:put(Var, Type, Bindings).
 
--spec match_all(options(), context(), list({t(), t()})) ->
+-spec match_all(context(), list({t(), t()})) ->
   match_result().
-match_all(_, Ctx, []) ->
+match_all(Ctx, []) ->
   {ok, Ctx};
-match_all(Opts, Ctx, [{TypeA, TypeB}|Types]) ->
-  case match(Opts, Ctx, TypeA, TypeB) of
-    Error={error, _}  -> Error;
-    {ok, NewCtx} -> match_all(Opts, NewCtx, Types)
+match_all(Ctx, [{TypeA, TypeB}|Types]) ->
+  case match(Ctx, TypeA, TypeB) of
+    {ok, NewCtx} -> match_all(NewCtx, Types);
+    Error        -> Error
   end.
 
--spec union_match_any(options(), context(), list({t(), t()}), context()) ->
+%% TODO prettify
+-spec union_match_any(context(), nonempty_list({t(), t()})) ->
   match_result().
-union_match_any(_, Ctx, [], []) ->
-  {error, Ctx};
-union_match_any(_, _, [], CtxsAcc) ->
-  {ok, union_contexts_all(lists:reverse(CtxsAcc))};
-union_match_any(Opts, Ctx, [{TypeA, TypeB}|Types], CtxsAcc) ->
-  NewCtxsAcc =
-    case match(Opts, Ctx, TypeA, TypeB) of
-      {ok, SubCtx} -> [SubCtx|CtxsAcc];
-      {error, _  } -> CtxsAcc
-    end,
-  union_match_any(Opts, Ctx, Types, NewCtxsAcc).
+union_match_any(Ctx, UnionTypes) ->
+  union_match_any(Ctx, lists:reverse(UnionTypes), []).
 
--spec union_match_all(options(), context(), list({t(), t()}), context()) ->
+-spec union_match_any(context(), list({t(), t()}), list(t:context())) ->
   match_result().
-union_match_all(_, _, [], CtxsAcc) ->
+union_match_any(Ctx, [{TypeA, TypeB}|Types], CtxsAcc) ->
+  {Status, SubCtx} = match(Ctx, TypeA, TypeB),
+  NewCtxsAcc =
+    case Status of
+      ok -> [SubCtx|CtxsAcc];
+      _  -> CtxsAcc
+    end,
+  case {Types, NewCtxsAcc} of
+    {[], []} -> {Status, Ctx};
+    {[], _ } -> {ok, union_contexts_all(NewCtxsAcc)};
+    {_ , _ } -> union_match_any(Ctx, Types, NewCtxsAcc)
+  end.
+
+-spec union_match_all(context(), list({t(), t()}), context()) ->
+  match_result().
+union_match_all(_, [], CtxsAcc) ->
   {ok, union_contexts_all(lists:reverse(CtxsAcc))};
-union_match_all(Opts, Ctx, [{TypeA, TypeB}|Types], CtxsAcc) ->
-  case match(Opts, Ctx, TypeA, TypeB) of
-    {ok, SubCtx}     -> union_match_all(Opts, Ctx, Types, [SubCtx|CtxsAcc]);
-    Error={error, _} -> Error
+union_match_all(Ctx, [{TypeA, TypeB}|Types], CtxsAcc) ->
+  case match(Ctx, TypeA, TypeB) of
+    {ok, SubCtx} -> union_match_all(Ctx, Types, [SubCtx|CtxsAcc]);
+    Error        -> Error
   end.
 
 -spec union_contexts_all(list(bindings())) ->
@@ -196,12 +208,11 @@ union_contexts_all([H|T]) ->
 -spec union_contexts(bindings(), bindings()) ->
   bindings().
 union_contexts(
-  #context{bindings = BindingsA, errors = ErrorsA},
-  #context{bindings = BindingsB, errors = ErrorsB}
+  #context{bindings = BindingsA},
+  #context{bindings = BindingsB}
 ) ->
   #context{
-    bindings = union_bindings(BindingsA, BindingsB),
-    errors   = ErrorsA ++ ErrorsB
+    bindings = union_bindings(BindingsA, BindingsB)
   }.
 
 -spec union_bindings(bindings(), bindings()) ->
@@ -209,97 +220,65 @@ union_contexts(
 union_bindings(BindingsA, BindingsB) ->
   maps:merge_with(
     fun(_, TypeA, TypeB) ->
-      union(TypeA, TypeB)
+      union([TypeA, TypeB])
     end,
     BindingsA,
     BindingsB
   ).
 
-
 %%
-%% Sum of two types
+%% construct a union
 %%
--spec union(t(), t()) ->
-  t().
-union(TypeA, TypeB) ->
-  UnionTypes =
-    case {TypeA, TypeB} of
-      {{union, TypesA}, {union, TypesB}} -> TypesA ++ TypesB;
-      {{union, Types }, Type           } -> Types  ++ [Type];
-      {Type           , {union, Types }} -> [Type  |  Types];
-      {_              , _              } -> [TypeA ,  TypeB]
-    end,
-  fold_union(UnionTypes, []).
-
--spec fold_union(list(t()), list(t())) ->
-  none | any | {union, list(t())}.
-fold_union([                   ], []    ) -> none;
-fold_union([                   ], [Type]) -> Type;
-fold_union([                   ], Acc   ) -> {union, lists:reverse(Acc)};
-fold_union([ any          |_   ], _     ) -> any;
-fold_union([ none         |Tail], Acc   ) -> fold_union(Tail, Acc);
-fold_union([{union, Types}|Tail], Acc   ) -> fold_union(Types ++ Tail, Acc);
-fold_union([ Head         |Tail], Acc   ) ->
+-spec union(ts()) ->
+  none | any | {union, ts()}.
+union(Ts) ->
+  union(Ts, []).
+-spec union(ts(), ts()) ->
+  none | any | {union, ts()}.
+union([                   ], []    ) -> none;
+union([                   ], [Type]) -> Type;
+union([                   ], Acc   ) -> {union, lists:reverse(Acc)};
+union([ any          |_   ], _     ) -> any;
+union([ none         |Tail], Acc   ) -> union(Tail, Acc);
+union([{union, Types}|Tail], Acc   ) -> union(Types ++ Tail, Acc);
+union([ Head         |Tail], Acc   ) ->
   NewAcc =
     case lists:member(Head, Acc) of
       true  -> Acc;
       false -> [Head|Acc]
     end,
-  fold_union(Tail, NewAcc).
+  union(Tail, NewAcc).
 
 %%
-%% converts to  type
+%% converts to type
 %%
 as(_From, _To) ->
   erlang:error(pt_stub).
 
--spec 'case'(options(), context(), list({t(), fun((context()) -> {t(), context()})}), bindings()) ->
-  {t(), context()}.
-'case'(Opts, Ctx, ValueType, Cases) ->
-  Bindings = Ctx#context.bindings,
-  {UnionTypes, NewCtx} =
-    lists:foldl(
-      fun({ClauseType, Fun}, {UnionTypesAcc, CtxsAcc}) ->
-        case match(Opts, CtxsAcc#context{bindings = Bindings}, ClauseType, ValueType) of
-          {ok, NewCtx} ->
-            {UnionType, NewCtxAcc} = Fun(NewCtx#context{errors = CtxsAcc#context.errors}),
-            {[UnionType|UnionTypesAcc], NewCtxAcc};
-          {error, NewCtxAcc} ->
-            {UnionTypesAcc, NewCtxAcc#context{errors = CtxsAcc#context.errors}}
-        end
-      end,
-      {[], Ctx},
-      Cases
-    ),
-  {
-    fold_union(UnionTypes, []),
-    NewCtx#context{bindings = Bindings}
-  }.
+-spec normalize_all(context(), ts()) ->
+  ts().
+normalize_all(Ctx, Types) ->
+  lists:map(fun(Type) -> normalize(Ctx, Type) end, Types).
 
--spec normalize_all(options(), context(), list(t())) ->
-  list(t()).
-normalize_all(Opts, Ctx, Types) ->
-  lists:map(fun(Type) -> normalize(Opts, Ctx, Type) end, Types).
-
--spec normalize(options(), context(), t()) ->
+-spec normalize(context(), t()) ->
   t().
-normalize(Opts, Ctx, {list, Type}) ->
-  {list, normalize(Opts, Ctx, Type)};
-normalize(Opts, Ctx, {cons, Head, Tail}) ->
-  {cons, normalize(Opts, Ctx, Head), normalize(Opts, Ctx, Tail)};
-normalize(Opts, Ctx, {tuple, Types}) ->
-  {tuple, normalize_all(Opts, Ctx, Types)};
-normalize(Opts, Ctx, {union, Types}) ->
-  fold_union(normalize_all(Opts, Ctx, Types), []);
-normalize(Opts, Ctx, {'fun', Args, Ret}) ->
-  {'fun', normalize_all(Opts, Ctx, Args), normalize(Opts, Ctx, Ret)};
-normalize(Opts, Ctx, Type = {var, Var}) ->
+normalize(Ctx, {list, Type}) ->
+  {list, normalize(Ctx, Type)};
+normalize(Ctx, {cons, Head, Tail}) ->
+  {cons, normalize(Ctx, Head), normalize(Ctx, Tail)};
+normalize(Ctx, {tuple, Types}) ->
+  {tuple, normalize_all(Ctx, Types)};
+normalize(Ctx, {union, Types}) ->
+  union(normalize_all(Ctx, Types), []);
+normalize(Ctx, {'fun', Args, Ret}) ->
+  {'fun', normalize_all(Ctx, Args), normalize(Ctx, Ret)};
+normalize(Ctx, Type = {var, Var}) ->
   case maps:find(Var, Ctx#context.bindings) of
-    {ok, V} -> normalize(Opts, Ctx, V);
+    {ok, V} -> normalize(Ctx, V);
      error  -> Type
   end;
-normalize(_, _, Type) ->
+normalize(_, Type) ->
   Type.
 
-reverse(Opts = #options{reverse_flag = Reverse}) ->
-  Opts#options{reverse_flag = not Reverse}.
+reverse(Ctx = #context{options = Opts = #options{reverse_flag = Reverse}}) ->
+  Ctx#context{options = Opts#options{reverse_flag = not Reverse}}.

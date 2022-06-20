@@ -74,6 +74,7 @@ Typo type checker
   * проверка на чистоту
   * замена match и case на match с bindings
 
+ * readonly модификатор для рекордов и мапов через номинальные типы
 
 Types programming
 -----------------
