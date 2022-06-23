@@ -1,5 +1,9 @@
 {"1.2.0",
-[{<<"astranaut">>,{pkg,<<"astranaut">>,<<"0.10.1">>},0}]}.
+[{<<"astranaut">>,{pkg,<<"astranaut">>,<<"0.10.1">>},0},
+ {<<"macro_pipe">>,
+  {git,"https://github.com/petrkozorezov/macro_pipe.git",
+       {ref,"3879a065f4a23faa90280d2e88f415685ca9936f"}},
+  0}]}.
 [
 {pkg_hash,[
  {<<"astranaut">>, <<"766B70C82B6C68BDA62B3878642B2CE248EFF05187240A32105E41C68FD1390E">>}]},

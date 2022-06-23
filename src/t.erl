@@ -1,6 +1,6 @@
 -module(t).
 -include_lib("typo/include/t.hrl").
--export([match/3, as/2, normalize/2, union/1]).
+-export([match/2, match/3, as/2, normalize/2, union/1]).
 -export_type([t/0, options/0, context/0, bindings/0, var_name/0, exception/0, exceptions/0, stacktrace/0, match_stack/0]).
 
 -type t() ::
@@ -41,6 +41,13 @@
 % -type message() :: {erl_anno:anno(), reason()}.
 
 -type match_result() :: {ok | {error, match_stack()}, context()}.
+
+-spec match(t(), t()) ->
+  ok | {error, match_stack()}.
+match(A, B) ->
+  {R, _} = match(#context{}, A, B),
+  R.
+
 -spec match(context(), t(), t()) ->
   match_result().
 match(Ctx0 = #context{bindings = Bindings, match_stack = MatchStack}, A, B) ->
@@ -208,11 +215,12 @@ union_contexts_all([H|T]) ->
 -spec union_contexts(bindings(), bindings()) ->
   bindings().
 union_contexts(
-  #context{bindings = BindingsA},
-  #context{bindings = BindingsB}
+  #context{bindings = BindingsA, exceptions = ExceptionsA},
+  #context{bindings = BindingsB, exceptions = ExceptionsB}
 ) ->
   #context{
-    bindings = union_bindings(BindingsA, BindingsB)
+    bindings   = union_bindings(BindingsA, BindingsB),
+    exceptions = ExceptionsA ++ ExceptionsB % TODO unique
   }.
 
 -spec union_bindings(bindings(), bindings()) ->

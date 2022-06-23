@@ -1,13 +1,13 @@
 -module(t_expr).
 -include_lib("typo/include/t.hrl").
--export([block/2, function/5, function_call/4, 'case'/3, match/3, try_catch/3]).
+-export([block/2, function/4, function_call/4, 'case'/3, match/3, try_catch/3]).
 
 -type expr() :: fun().
 -type exprs() :: list(expr()).
 
 -type clause() :: {
   Pattern :: t:t(),
-  Expr    :: expr()
+  Expr    :: exprs()
 }.
 -type clauses() :: list(clause()).
 
@@ -20,7 +20,7 @@ block(Ctx, Exprs) ->
   {Result, NewCtx} = block_(Ctx, Exprs),
   % block doesn't expose bindings
   {
-    t:normalize(Result, NewCtx),
+    t:normalize(NewCtx, Result),
     NewCtx#context{ bindings = Ctx#context.bindings }
   }.
 block_(CtxAcc, [Expr]) ->
@@ -28,24 +28,25 @@ block_(CtxAcc, [Expr]) ->
 block_(CtxAcc, [Expr|Exprs]) ->
   {Result, NewCtxAcc} = Expr(CtxAcc),
   case Result of
-    {none, _} -> {Result, NewCtxAcc}; % TODO dead code warning
-    _         -> block(NewCtxAcc, Exprs)
+    none -> {Result, NewCtxAcc}; % TODO dead code warning
+    _    -> block(NewCtxAcc, Exprs)
   end.
 
--spec function(t:context(), atom(), atom(), list(t:t()), clauses()) ->
+-spec function(atom(), atom(), list(t:t()), clauses()) ->
   result().
-function(Ctx, Module, Function, Args = {tuple, ArgsTypes}, Clauses) ->
-  FunCtx =
-    Ctx#context{
-      bindings   = #{},
-      stacktrace = [{Module, Function, ArgsTypes}|Ctx#context.stacktrace]
+function(_Module, _Function, Args = {tuple, _ArgsTypes}, Clauses) ->
+  Ctx =
+    #context{
+      bindings   = #{}
+      % stacktrace = [{Module, Function, ArgsTypes}|Ctx#context.stacktrace]
     },
-  {Result, ResultCtx} =
-    'case'(FunCtx, Clauses, Args, function_clause),
-  {Result, Ctx#context{
-    exceptions = ResultCtx#context.exceptions,
-    messages   = ResultCtx#context.messages
-  }}.
+  {Result, _ResultCtx} =
+    'case'(Ctx, Clauses, Args, function_clause),
+  Result.
+  % , Ctx#context{
+  %   exceptions = ResultCtx#context.exceptions,
+  %   messages   = ResultCtx#context.messages
+  % }}.
 
 -spec function_call(t:context(), atom(), atom(), list(t:t())) ->
   result().
@@ -81,10 +82,10 @@ function_call(Ctx, Module, Function, Args) ->
   {list(t:t()), t:context()}.
 case_(Ctx, [], _, UnionTypes) ->
   {UnionTypes, Ctx};
-case_(Ctx = #context{ bindings = Bindings }, [{Pattern, Fun}|Clauses], Value, UnionTypes) ->
+case_(Ctx = #context{ bindings = Bindings }, [{Pattern, Exprs}|Clauses], Value, UnionTypes) ->
   case t:match(Ctx, Pattern, Value) of
     {ok, ClauseCtx} ->
-      {UnionType, NewCtx} = Fun(ClauseCtx),
+      {UnionType, NewCtx} = block(ClauseCtx, Exprs),
       case_(NewCtx#context{ bindings = Bindings }, Clauses, Value, [UnionType|UnionTypes]);
     {{error, _}, NewCtx} ->
       % TODO ensure binding after unsuccessful match does not change

@@ -9,11 +9,11 @@ Typo type checker
   * сделать pt для type (???)
   * сделать мапы
   * логические функции(?) на мапами ('&', '|')
-  * unknown type
   * add anno
   * проверка полноты покрытия в case
-  * тип term как супер типа для литералов
-  * term как unknown (плохая идея, будет людей сбивать с толку, unknown нужен явный)
+  * unknown type
+   * тип term как супер типа для литералов (?)
+   * term как unknown
   * заменить return на next (?) будет быстрее (а значимо ли?), но может стать пипец как сложно
 
  Вопросы:
@@ -96,28 +96,14 @@ Typo type:
 -spec tree(t:t()) ->
   t:t().
 tree(T) ->
-  t:union([{leaf, T}, tree(T)]).
+  union([{leaf, T}, tree(T)]).
 ```
 
 Will transform to code for Typo checker:
 ```erlang
-tree__type(Arg) ->
-  t:'case'({tuple, [Arg]},
-    [
-      {tuple, [{var, 'T'}]},
-      fun(Bindings) ->
-        % resolving local variables and simplifying types (e.g. '{union, []}' 'means none')
-        t:normalize(
-          {union, [
-            {tuple, [{atom, leaf}, {var, 'T'}]},
-            {fun tree__type/1, {var, T}}
-          ]},
-          Bindings
-        )
-      end
-    ]
-  end.
+% TODO
 ```
+
 
 Фазы
 ----
@@ -131,3 +117,10 @@ tree__type(Arg) ->
    * проверочные функции (spec to ttype) `foo__spec_check` вызывая которые, можно убедиться, что спек правильный.
   * все функции конвертируются в type functions (expr to ttype) `foo__impl` .
 
+
+
+
+
+1. specs and types to types funs
+1. add specs_checks
+1. type funs to erlang

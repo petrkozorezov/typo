@@ -3,10 +3,10 @@
   % term = any % by default term = t:unknown
 }).
 -record(context, {
-  options     = #options{} :: t:options(),
-  bindings    = #{}        :: t:bindings(),
-  exceptions  = []         :: t:exceptions(),
-  stacktrace  = []         :: list(term()), % TODO refine
-  messages    = []         :: list(term()), % TODO refine
-  match_stack = []         :: t:match_stack()
+  options     = #options{} :: t:options(),                 % pd?
+  bindings    = #{}        :: t:bindings(),                % в параметры
+  exceptions  = []         :: t:exceptions(),              % в тип
+  stacktrace  = []         :: list(term()), % TODO refine  % pd or plain stacktraces
+  messages    = []         :: list(term()), % TODO refine  % pd?
+  match_stack = []         :: t:match_stack()              % можно перенести параметром в match
 }).
