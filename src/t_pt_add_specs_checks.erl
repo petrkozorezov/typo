@@ -59,7 +59,7 @@ transform(Form = {function, Pos, SpecName, _, Clauses}, State) ->
           {clause, Pos, [VarT], [], [
             quote(
               case t:match(_A@SpecName(_@VarT), _A@ImplName(_@VarT)) of
-                 ok            -> [];
+                {ok, _}        -> [];
                 {error, Error} -> [{'spec clause does not match impl', _@VarT, Error}]
               end
             )

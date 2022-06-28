@@ -13,12 +13,16 @@
 -define(a3, {atom, a3}).
 -define(ua1a2, {union, [?a1, ?a2]}).
 
-ctx() ->
-  ctx(#{}).
-ctx(Bindings) ->
-  ctx(Bindings, []).
-ctx(Bindings, Exceptions) ->
-  #context{
-    bindings   = Bindings,
-    exceptions = Exceptions
-  }.
+-define(with_dbg(Expr),
+  dbg:tracer(process, {fun dbg:dhandler/2, standard_error}),
+  dbg:p(processes, c),
+  try
+    Expr
+  after
+    dbg:stop()
+  end
+).
+
+  % ?with_dbg(begin
+  % dbg:tpl({t, match, '_'}, x),
+

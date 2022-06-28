@@ -5,13 +5,12 @@
 -spec parse_transform([erl_parse:abstract_form()], compile:option()) ->
   [erl_parse:abstract_form()].
 parse_transform(Forms, Options) ->
-  io:format("hello~n"),
   ?pipe([Forms ||
     t_pt_add_impls         :parse_transform('_', Options),
     t_pt_specs_to_type_funs:parse_transform('_', Options),
     t_pt_type_funs         :parse_transform('_', Options),
-    t_pt_add_specs_checks  :parse_transform('_', Options),
-    t_pt_type_funs_core    :parse_transform('_', Options)
+    t_pt_add_specs_checks  :parse_transform('_', Options)
+    % t_pt_type_funs_core    :parse_transform('_', Options)
   ]).
 
 

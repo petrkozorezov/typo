@@ -30,91 +30,69 @@ transform(Form, State) ->
 
 %%
 
-%% for core transform
-%%
-%% TODO let(?), case, try, call(?), apply(?), primop
-% % inline
-% 'case'() ->
-%   begin
-%     % TODO warn('dead code')
-%     {R1, V1} =
-%       case t:match(Bindings, Pattern1, V0, Bounds1) of
-%         {ok, NewValue, NewBindings} -> {t:normalize(Expr1), NewValue};
-%         _                           -> {none, V0}
-%       end
-%     % ...
-%     {Rn, Vn} = % error clause
-%       case t:match(Bindings, Pattern1, V0, Bounds1) of
-%         {ok, NewValue, NewBindings} -> {t:normalize(Expr1), NewValue};
-%         _                           -> {none, V0}
-%       end,
-%     union([
-%       R1,
-%       %...
-%       Rn
-%     ])
-%   end.
-
 function({function, Pos, Name, Arity, Clauses}) ->
-  {function, Pos, Name, Arity, lists:map(fun clause/1, Clauses)}.
+  {function, Pos, Name, Arity, lists:map(fun type_clause/1, Clauses)}.
 
--spec exprs(list(erl_parse:abstract_expr())) ->
+type_clause({clause, Pos, Args, Guards, Exprs}) ->
+  {clause, Pos, type_exprs(Args), Guards, type_exprs(Exprs)}.
+
+-spec type_exprs(list(erl_parse:abstract_expr())) ->
   list(t:type()).
-exprs(Exprs) ->
-  lists:map(fun expr/1, Exprs).
+type_exprs(Exprs) ->
+  lists:map(fun type_expr/1, Exprs).
 
--spec expr(erl_parse:abstract_expr()) ->
+-spec type_expr(erl_parse:abstract_expr()) ->
   t:type().
-expr(quote = _V@Var) ->
-  quote({var, _A@Var});
-expr(quote = _A@Atom) ->
+% type_expr(quote = _V@Var) ->
+%   quote({var, _A@Var});
+type_expr(quote = _A@Atom) ->
   quote({atom, _A@Atom});
-expr(quote = _I@Integer) ->
+type_expr(quote = _I@Integer) ->
   quote({integer, _I@Integer});
-expr(quote = _F@Float) ->
+type_expr(quote = _F@Float) ->
   quote({float, _F@Float});
-expr(quote = []) ->
+type_expr(quote = []) ->
   quote([]);
-expr(quote = [_@Head | _@Tail]) ->
-  HeadT = expr(Head),
-  TailT = expr(Tail),
+type_expr(quote = [_@Head | _@Tail]) ->
+  HeadT = type_expr(Head),
+  TailT = type_expr(Tail),
   quote({cons, _@HeadT, _@TailT});
-expr({tuple, _, Values}) ->
-  ValuesT = t_pt_utils:list_literal(exprs(Values)),
+type_expr({tuple, _, Values}) ->
+  ValuesT = t_pt_utils:list_literal(type_exprs(Values)),
   quote({tuple, _@ValuesT});
-expr({match, _, {atom, _, 't:untype'}, Expr}) ->
-  [UntypeExpr] = astranaut:smap(fun expr_untype/1, [Expr], #{}),
+type_expr({match, _, {atom, _, 't:untype'}, Expr}) ->
+  [UntypeExpr] = astranaut:smap(fun untype_expr/1, [Expr], #{}),
   UntypeExpr;
-expr({match, Pos, Pattern, Value}) ->
-  {match, Pos, expr(Pattern), expr(Value)};
-expr({'case', Pos, Value, Clauses}) ->
-  {'case', Pos, expr(Value), lists:map(fun clause/1, Clauses)};
-expr({call, _, {remote, _, {atom, _, t}, {atom, _, untype}}, [Expr]}) ->
-  [UntypeExpr] = astranaut:smap(fun expr_untype/1, [Expr], #{}),
+type_expr({match, Pos, Pattern, Value}) ->
+  {match, Pos, type_expr(Pattern), type_expr(Value)};
+type_expr({'case', Pos, Value, Clauses}) ->
+  {'case', Pos, type_expr(Value), lists:map(fun type_clause/1, Clauses)};
+type_expr({call, _, {remote, _, {atom, _, t}, {atom, _, untype}}, [Expr]}) ->
+  [UntypeExpr] = astranaut:smap(fun untype_expr/1, [Expr], #{}),
   UntypeExpr;
-expr({call, Pos, Func, Args}) ->
-  {call, Pos, call_fun(Func), exprs(Args)};
-expr({'try', Pos, Exprs, Clauses, CatchClauses, After}) ->
+type_expr({call, Pos, Func, Args}) ->
+  {call, Pos, type_call(Func), type_exprs(Args)};
+type_expr({'try', Pos, Exprs, Clauses, CatchClauses, After}) ->
   {'try', Pos,
-    exprs(Exprs),
-    lists:map(fun clause/1, Clauses),
-    lists:map(fun clause/1, CatchClauses),
-    exprs(After)
+    type_exprs(Exprs),
+    lists:map(fun type_clause/1, Clauses),
+    lists:map(fun type_clause/1, CatchClauses),
+    type_exprs(After)
   };
-expr({block, Pos, Exprs}) ->
-  {block, Pos, exprs(Exprs)}.
+type_expr({block, Pos, Exprs}) ->
+  {block, Pos, type_exprs(Exprs)};
+type_expr(Expr) ->
+  io:format("~p: unknown expr: ~p~n", [?MODULE, Expr]),
+  Expr.
 
-clause({clause, Pos, Args, Guards, Exprs}) ->
-  {clause, Pos, exprs(Args), Guards, exprs(Exprs)}.
+type_call({remote, Pos, Module, Function}) ->
+  {remote, Pos, type_expr(Module), type_expr(Function)};
+type_call(Func) ->
+  type_expr(Func).
 
-call_fun({remote, Pos, Module, Function}) ->
-  {remote, Pos, expr(Module), expr(Function)};
-call_fun(Func) ->
-  expr(Func).
-
-expr_untype({match, _, {atom, _, 't:type'}, Expr}) ->
-  call_fun(Expr);
-expr_untype({call, _, {remote, _, {atom, _, t}, {atom, _, type}}, [Expr]}) ->
-  call_fun(Expr);
-expr_untype(Node) ->
+untype_expr({match, _, {atom, _, 't:type'}, Expr}) ->
+  type_expr(Expr);
+untype_expr({call, _, {remote, _, {atom, _, t}, {atom, _, type}}, [Expr]}) ->
+  type_expr(Expr);
+untype_expr(Node) ->
   Node.
