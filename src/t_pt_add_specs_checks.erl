@@ -8,7 +8,18 @@
 %  * сгенерить общий spec-check
 %  * поэкспортировать всех
 
-%% TODO __spec_check with arity =/= 1
+% -spec foo() -> ok.
+% foo() -> ok.
+
+% foo__spec_check проверка спеки (типовая?)
+% foo__spec типовая версия спеки
+% foo__impl типовая версия foo
+% foo вызывает spec если есть
+
+% bar() -> ok.
+% bar__impl типовая версия bar
+% bar вызывает impl
+
 
 -record(state, {
   attrs       = #{} :: list({atom(), arity()}),
@@ -30,7 +41,7 @@ parse_transform([Head|Tail], Options) ->
 -define(spec_rev, "ceps__"). %% lists:reverse("__spec")
 -spec transform(erl_parse:abstract_form(), state()) ->
   {[erl_parse:abstract_form()], state()}.
-transform(Form = {function, Pos, SpecName, _, Clauses}, State) ->
+transform(Form = {function, Pos, SpecName, Arity, Clauses}, State) ->
   SpecNameStr = erlang:atom_to_list(SpecName),
   case string:prefix(lists:reverse(SpecNameStr), ?spec_rev) of
     nomatch ->
@@ -39,6 +50,7 @@ transform(Form = {function, Pos, SpecName, _, Clauses}, State) ->
       BaseNameStr   = lists:reverse(RevBaseNameStr),
       BaseName      = erlang:list_to_atom(BaseNameStr),
       SpecCheckName = erlang:list_to_atom(SpecNameStr ++ "_check"),
+      SpecCheckSpecificName = erlang:list_to_atom(SpecNameStr ++ "_check_"),
       ImplName      = erlang:list_to_atom(BaseNameStr ++ "__impl"),
       SpecCheck0 =
         {function, Pos, SpecCheckName, 0, [
@@ -46,28 +58,31 @@ transform(Form = {function, Pos, SpecName, _, Clauses}, State) ->
             quote(
               lists:flatten([
                 unquote_splicing([
-                  quote( _A@SpecCheckName(_L@Args) ) || {clause, _, Args, _, _} <- Clauses
+                  quote( _A@SpecCheckSpecificName(_L@Args) ) || {clause, _, Args, _, _} <- Clauses
                 ])
               ])
             )
           ]}
         ]},
 
-      VarT = {var, Pos, 'T'},
+      Args = [
+        {var, Pos, erlang:list_to_atom("A" ++ erlang:integer_to_list(N))}
+        || N <- lists:seq(1, Arity)
+      ],
       SpecCheck1 =
-        {function, Pos, SpecCheckName, 1, [
-          {clause, Pos, [VarT], [], [
+        {function, Pos, SpecCheckSpecificName, Arity, [
+          {clause, Pos, Args, [], [
             quote(
-              case t:match(_A@SpecName(_@VarT), _A@ImplName(_@VarT)) of
+              case t:match(_A@SpecName(_L@Args), _A@ImplName(_L@Args)) of
                 {ok, _}        -> [];
-                {error, Error} -> [{'spec clause does not match impl', _@VarT, Error}]
+                {error, Error} -> [{'spec clause does not match impl', [_L@Args], Error}]
               end
             )
           ]}
         ]},
       Exports = [
         {SpecCheckName, 0},
-        {SpecCheckName, 1}
+        {SpecCheckSpecificName, Arity}
       ],
       NewState =
         State#state{

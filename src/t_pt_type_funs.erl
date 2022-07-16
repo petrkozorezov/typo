@@ -43,8 +43,8 @@ type_exprs(Exprs) ->
 
 -spec type_expr(erl_parse:abstract_expr()) ->
   t:type().
-% type_expr(quote = _V@Var) ->
-%   quote({var, _A@Var});
+type_expr(quote = _V@Var) ->
+  quote({var, _A@Var});
 type_expr(quote = _A@Atom) ->
   quote({atom, _A@Atom});
 type_expr(quote = _I@Integer) ->

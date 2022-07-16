@@ -35,7 +35,7 @@ function({#c_var{} = Name, #c_fun{ ?A, vars = Args, body = Expr } = Fun}) ->
         #c_call{
           anno   = Anno,
           module = #c_literal{?A, val = t},
-          name   = #c_literal{?A, val = eval_function},
+          name   = #c_literal{?A, val = eval},
           args   = [args_bindings(Anno, Args), #c_literal{?A, val = expr(Expr)}]
         }
     }
@@ -99,3 +99,33 @@ value(Node) ->
 
 values(ES) ->
   lists:map(fun value/1, ES).
+
+
+% % erl: {t_untype , Expr}
+% % ex:  {:t_untype, Expr}
+% type_expr(#c_tuple{es = [#c_literal{val = t_untype}, Expr]}) ->
+%   ok.
+
+% type_literal({t_untype, Literal}) ->
+%   untype_literal(Literal);
+% type_literal(Atom) -> when is_atom(Atom) ->
+%   {atom, Atom};
+
+
+% untype_expr(#c_tuple{es = [#c_literal{val = t_type}, Expr]}) ->
+%   ok.
+
+% untype_literal(Literal)
+%   ok.
+
+% % test_type_untype(untype = T) ->
+% %   untype(
+% %     case T of
+% %       42 -> {atom, ok}
+% %     end
+% %   ).
+
+% % test_type_untype(T) ->
+% %   case T of
+% %     42 -> ok
+% %   end.

@@ -1,6 +1,6 @@
 -module(t).
 -include_lib("macro_pipe/include/macro_pipe.hrl").
--export([match/2, match/3, match/4, as/2, norm/2, union/1, eval_function/2, eval/2]).
+-export([match/2, match/3, match/4, norm/2, union/1, eval/2]).
 -export_type([t/0, bindings/0, var_name/0, exception/0, exceptions/0, stacktrace/0, match_stack/0]).
 
 -type t() ::
@@ -121,6 +121,9 @@ match_(State, Type, AnyOrNone) when AnyOrNone =:= any; AnyOrNone =:= none -> % R
     _                  -> {ok, State} % primitive types
   end;
 
+% TODO {vector, T, N}
+% nil             <= {vector, T, _} => true
+% {cons, T, Tail} <= {vector, T, N} => Tail <= {vector, T, N - 1}
 match_(State, {list, TypeA}, {list, TypeB}) ->
   match(State, TypeA, TypeB);
 match_(State, ListType = {list, Type}, {cons, Head, Tail}) ->
@@ -157,6 +160,10 @@ match_(State, {'fun', ArgsA, RetA}, {'fun', ArgsB, RetB}) ->
     {ok, NewState}     -> match(reverse(NewState), RetA, RetB);
     Error = {error, _} -> Error
   end;
+
+% {meta, Name, Fun, Args}
+%   foo(arg) => {type, {?MODULE, foo}, fun   foo/1, [arg]}
+% t:foo(arg) => {type, {t      , foo}, fun t:foo/1, [arg]}
 
 % mb use word 'MetaType' instead of 'F'
 match_(State, F, Type) when is_function(F, 0) ->
@@ -302,8 +309,15 @@ union([ Head         |Tail], Acc   ) ->
 %%
 %% converts to type
 %%
-as(_From, _To) ->
-  erlang:error(pt_stub).
+% -spec as(To::t(), From::t()) ->
+%   To.
+% as(To, From) ->
+%   % t:as(integer(), t:as(t:term(), a1)).
+%   % A extends B or B extends A
+%   case extends(From, To) orelse extends(To, From) of
+%     true  -> To;
+%     false -> error()
+%   end.
 
 -spec norm_all(bindings(), ts()) ->
   ts().
@@ -353,13 +367,13 @@ reverse_cmp('==' ) -> '=='.
   | {'case', Value::(t() | ts()), list({t(), expr()})}
 .
 
--spec eval_function(bindings(), expr()) ->
-  t().
-eval_function(B, Body) ->
-  OldExcs = pd_swap(exceptions, []),
-  Result  = eval(B, Body),
-  NewExcs = pd_swap(exceptions, OldExcs),
-  union([Result | [{exception, Exc} || Exc <- NewExcs]]).
+% -spec eval_function(bindings(), expr()) ->
+%   t().
+% eval_function(B, Body) ->
+%   OldExcs = pd_swap(exceptions, []),
+%   Result  = eval(B, Body),
+%   NewExcs = pd_swap(exceptions, OldExcs),
+%   union([Result | [{exception, Exc} || Exc <- NewExcs]]).
 
 % % call_function(F) ->
 % %   Result = F(),
